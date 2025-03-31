@@ -8,6 +8,7 @@
 #include <furi_hal_spi.h>
 #include <furi_hal_interrupt.h>
 #include <furi_hal_resources.h>
+#include <power/power_service/power.h>
 #include <nrf24.h>
 #include <notification/notification_messages.h>
 #include <dolphin/dolphin.h>
@@ -20,13 +21,13 @@
 
 #define TAG "jammer"
 
-#define MARGIN_LEFT 5
-#define MARGIN_TOP 5
-#define MARGIN_BOT 5
+#define MARGIN_LEFT  5
+#define MARGIN_TOP   5
+#define MARGIN_BOT   5
 #define MARGIN_RIGHT 5
-#define KEY_WIDTH 5
-#define KEY_HEIGHT 10
-#define KEY_PADDING 2
+#define KEY_WIDTH    5
+#define KEY_HEIGHT   10
+#define KEY_PADDING  2
 
 typedef struct {
     FuriMutex* mutex;
@@ -50,51 +51,51 @@ typedef struct {
 
 // various types of hopping I empirically found
 uint8_t hopping_channels_2[128];
-uint8_t hopping_channels_1[] = {32,34, 46,48, 50, 52, 0, 1, 2, 4, 6, 8, 22, 24, 26, 28, 30, 74, 76, 78, 80, 82, 84,86 };
+uint8_t hopping_channels_1[] = {32, 34, 46, 48, 50, 52, 0,  1,  2,  4,  6,  8,
+                                22, 24, 26, 28, 30, 74, 76, 78, 80, 82, 84, 86};
 uint8_t hopping_channels_0[] = {2, 26, 80};
 uint8_t hopping_channels_len[] = {3, 24, 42, 0};
 
-
-int parse_custom_list(char *input, uint8_t **out_arr) {
+int parse_custom_list(char* input, uint8_t** out_arr) {
     // Make a copy of the input string, because strtok modifies it
-    char *temp = strdup(input);
-    if (!temp) {
+    char* temp = strdup(input);
+    if(!temp) {
         *out_arr = NULL;
         return 0;
     }
 
     // First pass: count how many integers we have (commas + 1)
     int count = 0;
-    for (int i = 0; temp[i] != '\0'; i++) {
-        if (temp[i] == ',') {
+    for(int i = 0; temp[i] != '\0'; i++) {
+        if(temp[i] == ',') {
             count++;
         }
     }
-    count++;  // one more than number of commas
+    count++; // one more than number of commas
 
     // Allocate the array
-    *out_arr = (uint8_t *)malloc(count * sizeof(uint8_t));
-    if (!(*out_arr)) {
+    *out_arr = (uint8_t*)malloc(count * sizeof(uint8_t));
+    if(!(*out_arr)) {
         free(temp);
         return 0; // allocation failed
     }
 
     // Second pass: tokenize and parse
     int index = 0;
-    char *token = strtok(temp, ",");
-    while (token != NULL) {
-        (*out_arr)[index++] = (uint8_t) atoi(token);
+    char* token = strtok(temp, ",");
+    while(token != NULL) {
+        (*out_arr)[index++] = (uint8_t)atoi(token);
         token = strtok(NULL, ",");
     }
 
     free(temp);
-    return count;  // number of integers parsed
+    return count; // number of integers parsed
 }
 
-char *jam_types[] = {"narrow", "wide", "full", "custom"};
-uint8_t  *hopping_channels;
+char* jam_types[] = {"narrow", "wide", "full", "custom"};
+uint8_t* hopping_channels;
 int hopping_channels_custom_len = 0;
-uint8_t *hopping_channels_custom_arr = NULL;
+uint8_t* hopping_channels_custom_arr = NULL;
 
 static void render_callback(Canvas* const canvas, void* ctx) {
     furi_assert(ctx);
@@ -112,12 +113,13 @@ static void render_callback(Canvas* const canvas, void* ctx) {
 
     if(!plugin_state->is_thread_running && plugin_state->jam_type <= 3) {
         canvas_set_font(canvas, FontSecondary);
-        canvas_draw_str_aligned(canvas, 10, 20, AlignLeft, AlignBottom, "Press Ok button to start");
-        
-        if (plugin_state->jam_type == 3) {
-            canvas_draw_str(canvas, 80, 30, "select file >"); 
+        canvas_draw_str_aligned(
+            canvas, 10, 20, AlignLeft, AlignBottom, "Press Ok button to start");
+
+        if(plugin_state->jam_type == 3) {
+            canvas_draw_str(canvas, 80, 30, "select file >");
         }
-        
+
         if(!plugin_state->is_nrf24_connected) {
             canvas_draw_str_aligned(
                 canvas, 10, 30, AlignLeft, AlignBottom, "Connect NRF24 to GPIO!");
@@ -126,8 +128,7 @@ static void render_callback(Canvas* const canvas, void* ctx) {
         canvas_set_font(canvas, FontSecondary);
         canvas_draw_str_aligned(canvas, 3, 30, AlignLeft, AlignBottom, "Causing mayhem...");
         canvas_draw_str_aligned(canvas, 3, 40, AlignLeft, AlignBottom, "Please wait!");
-        canvas_draw_str_aligned(
-            canvas, 3, 50, AlignLeft, AlignBottom, "Press back to exit.");
+        canvas_draw_str_aligned(canvas, 3, 50, AlignLeft, AlignBottom, "Press back to exit.");
     } else {
         canvas_draw_str_aligned(canvas, 3, 10, AlignLeft, AlignBottom, "Unknown Error");
         canvas_draw_str_aligned(canvas, 3, 20, AlignLeft, AlignBottom, "press back");
@@ -135,9 +136,9 @@ static void render_callback(Canvas* const canvas, void* ctx) {
     }
     uint8_t limit = hopping_channels_len[plugin_state->jam_type];
     canvas_draw_frame(canvas, 0, 52, 128, 13);
-    if (limit > 0) {
+    if(limit > 0) {
         for(int i = 0; i < limit; i++) {
-            canvas_draw_line(canvas, hopping_channels[i]+1, 53, hopping_channels[i]+1, 64);
+            canvas_draw_line(canvas, hopping_channels[i] + 1, 53, hopping_channels[i] + 1, 64);
         }
     }
     //furi_mutex_release(plugin_state->mutex);
@@ -162,28 +163,31 @@ static int32_t mj_worker_thread(void* ctx) {
     char tmp[128];
     // make sure the NRF24 is powered down so we can do all the initial setup
     nrf24_set_idle(nrf24_HANDLE);
-    uint8_t mac[] = { 0xDE, 0xAD}; // DEAD BEEF FEED
-    uint8_t ping_packet[] = {0xDE, 0xAD, 0xBE, 0xEF,0xDE, 0xAD, 0xBE, 0xEF,0xDE, 0xAD, 0xBE, 0xEF,0xDE, 0xAD, 0xBE, 0xEF,0xDE, 0xAD, 0xBE, 0xEF,0xDE, 0xAD, 0xBE, 0xEF,0xDE, 0xAD, 0xBE, 0xEF,0xDE, 0xAD, 0xBE, 0xEF}; // 32 bytes, in case we ever need to experiment with bigger packets
-       
+    uint8_t mac[] = {0xDE, 0xAD}; // DEAD BEEF FEED
+    uint8_t ping_packet[] = {
+        0xDE, 0xAD, 0xBE, 0xEF, 0xDE, 0xAD, 0xBE, 0xEF, 0xDE, 0xAD, 0xBE,
+        0xEF, 0xDE, 0xAD, 0xBE, 0xEF, 0xDE, 0xAD, 0xBE, 0xEF, 0xDE, 0xAD,
+        0xBE, 0xEF, 0xDE, 0xAD, 0xBE, 0xEF, 0xDE, 0xAD, 0xBE, 0xEF}; // 32 bytes, in case we ever need to experiment with bigger packets
+
     uint8_t conf = 0;
 
     nrf24_configure(nrf24_HANDLE, 2, mac, mac, 2, 1, true, true);
     // set PA level to maximum
-    uint8_t setup; 
-    nrf24_read_reg(nrf24_HANDLE, REG_RF_SETUP, &setup,1);
-    
+    uint8_t setup;
+    nrf24_read_reg(nrf24_HANDLE, REG_RF_SETUP, &setup, 1);
+
     setup &= 0xF8;
     setup |= 7;
-    
+
     snprintf(tmp, 128, "NRF24 SETUP REGISTER: %d", setup);
     FURI_LOG_D(TAG, tmp);
-    
-    nrf24_read_reg(nrf24_HANDLE, REG_CONFIG, &conf,1);
+
+    nrf24_read_reg(nrf24_HANDLE, REG_CONFIG, &conf, 1);
     snprintf(tmp, 128, "NRF24 CONFIG REGISTER: %d", conf);
     FURI_LOG_D(TAG, tmp);
     nrf24_write_reg(nrf24_HANDLE, REG_RF_SETUP, setup);
 
-    #define size 32
+#define size 32
     uint8_t status = 0;
     uint8_t tx[size + 1];
     uint8_t rx[size + 1];
@@ -194,29 +198,27 @@ static int32_t mj_worker_thread(void* ctx) {
 
     memcpy(&tx[1], ping_packet, size);
 
-    #define nrf24_TIMEOUT 500
+#define nrf24_TIMEOUT 500
     // push data to the TX register
     nrf24_spi_trx(nrf24_HANDLE, tx, 0, size + 1, nrf24_TIMEOUT);
     // put the module in TX mode
     nrf24_set_tx_mode(nrf24_HANDLE);
     // send one test packet (for debug reasons)
-    while(!(status & (TX_DS | MAX_RT))) 
-    {
+    while(!(status & (TX_DS | MAX_RT))) {
         status = nrf24_status(nrf24_HANDLE);
         snprintf(tmp, 128, "NRF24 STATUS REGISTER: %d", status);
-        
+
         FURI_LOG_D(TAG, tmp);
     }
     NotificationApp* notification = furi_record_open(RECORD_NOTIFICATION);
 
-    
     uint8_t chan = 0;
     uint8_t limit = 0;
     notification_message(notification, &sequence_blink_red_100);
 
     do {
         limit = hopping_channels_len[plugin_state->jam_type];
-        for(int ch = 0;ch < limit; ch++) {
+        for(int ch = 0; ch < limit; ch++) {
             chan = hopping_channels[ch];
             // change channel
             nrf24_write_reg(nrf24_HANDLE, REG_RF_CH, chan);
@@ -224,9 +226,9 @@ static int32_t mj_worker_thread(void* ctx) {
             nrf24_spi_trx(nrf24_HANDLE, tx, 0, 3, nrf24_TIMEOUT);
         }
     } while(!plugin_state->close_thread_please);
-    
+
     furi_record_close(RECORD_NOTIFICATION);
-    
+
     plugin_state->is_thread_running = false;
     nrf24_set_idle(nrf24_HANDLE);
     return 0;
@@ -246,6 +248,15 @@ int32_t jammer_app(void* p) {
         return 255;
     }
 
+    FURI_LOG_D(TAG, "nrf24 init...");
+
+    Power* power = furi_record_open(RECORD_POWER);
+
+    power_enable_otg(power, true);
+
+    nrf24_init();
+    FURI_LOG_D(TAG, "nrf24 init done!");
+
     NotificationApp* notification = furi_record_open(RECORD_NOTIFICATION);
 
     // Set system callbacks
@@ -262,11 +273,10 @@ int32_t jammer_app(void* p) {
     furi_thread_set_stack_size(plugin_state->jam_thread, 2048);
     furi_thread_set_context(plugin_state->jam_thread, plugin_state);
     furi_thread_set_callback(plugin_state->jam_thread, mj_worker_thread);
-    FURI_LOG_D(TAG, "nrf24 init...");
-    nrf24_init();
-    FURI_LOG_D(TAG, "nrf24 init done!");
+
     PluginEvent event;
-    for(int i = 0; i < 128; i++) hopping_channels_2[i] = i*2;
+    for(int i = 0; i < 128; i++)
+        hopping_channels_2[i] = i * 2;
     hopping_channels = hopping_channels_0;
     plugin_state->is_nrf24_connected = true;
     if(!nrf24_check_connected(nrf24_HANDLE)) {
@@ -275,7 +285,7 @@ int32_t jammer_app(void* p) {
 
     for(bool processing = true; processing;) {
         FuriStatus event_status = furi_message_queue_get(event_queue, &event, 100);
-        
+
         if(event_status == FuriStatusOk) {
             // press events
             if(event.type == EventTypeKey) {
@@ -284,15 +294,23 @@ int32_t jammer_app(void* p) {
 
                     switch(event.input.key) {
                     case InputKeyUp:
-                        if(!plugin_state -> is_thread_running) {
+                        if(!plugin_state->is_thread_running) {
                             plugin_state->jam_type = (plugin_state->jam_type + 1) % 4;
-                        
+
                             switch(plugin_state->jam_type) {
-                                case 0: hopping_channels = hopping_channels_0; break;
-                                case 1: hopping_channels = hopping_channels_1; break;
-                                case 2: hopping_channels = hopping_channels_2; break;
-                                case 3: hopping_channels = hopping_channels_custom_arr;
-                                default: break;             
+                            case 0:
+                                hopping_channels = hopping_channels_0;
+                                break;
+                            case 1:
+                                hopping_channels = hopping_channels_1;
+                                break;
+                            case 2:
+                                hopping_channels = hopping_channels_2;
+                                break;
+                            case 3:
+                                hopping_channels = hopping_channels_custom_arr;
+                            default:
+                                break;
                             }
 
                             view_port_update(view_port);
@@ -301,7 +319,7 @@ int32_t jammer_app(void* p) {
                     case InputKeyDown:
                         break;
                     case InputKeyRight:
-                        if(plugin_state->jam_type == 3) { 
+                        if(plugin_state->jam_type == 3) {
                             DialogsApp* dialogs = furi_record_open("dialogs");
                             Storage* storage = furi_record_open(RECORD_STORAGE);
                             plugin_state->select_file_on_next_render = true;
@@ -311,15 +329,24 @@ int32_t jammer_app(void* p) {
                             path = furi_string_alloc();
                             furi_string_set(path, "/ext/");
                             DialogsFileBrowserOptions browser_options;
-                            dialog_file_browser_set_basic_options(&browser_options, ".txt", &I_badusb_10px);
+                            dialog_file_browser_set_basic_options(
+                                &browser_options, ".txt", &I_badusb_10px);
                             browser_options.hide_ext = false;
                             browser_options.base_path = "/ext/";
                             furi_delay_ms(1000);
-                            bool ret = dialog_file_browser_show(dialogs, path, path, &browser_options);
+                            bool ret =
+                                dialog_file_browser_show(dialogs, path, path, &browser_options);
                             furi_record_close("dialogs");
                             if(ret) {
-                                if(!file_stream_open(file_stream, furi_string_get_cstr(path), FSAM_READ, FSOM_OPEN_EXISTING)) {
-                                    FURI_LOG_D(TAG, "Cannot open file \"%s\"", furi_string_get_cstr(path));
+                                if(!file_stream_open(
+                                       file_stream,
+                                       furi_string_get_cstr(path),
+                                       FSAM_READ,
+                                       FSOM_OPEN_EXISTING)) {
+                                    FURI_LOG_D(
+                                        TAG,
+                                        "Cannot open file \"%s\"",
+                                        furi_string_get_cstr(path));
                                 } else {
                                     size_t file_size = 0;
                                     size_t bytes_read = 0;
@@ -331,11 +358,18 @@ int32_t jammer_app(void* p) {
                                     bytes_read = stream_read(file_stream, file_buf, file_size);
                                     if(bytes_read == file_size) {
                                         FURI_LOG_I(TAG, "read file");
-                                        hopping_channels_custom_len = parse_custom_list((char *)file_buf, &hopping_channels_custom_arr);
+                                        hopping_channels_custom_len = parse_custom_list(
+                                            (char*)file_buf, &hopping_channels_custom_arr);
 
-                                        FURI_LOG_D(TAG, "Length: %d\n", hopping_channels_custom_len);           // e.g. 6
-                                        for (int i = 0; i < hopping_channels_custom_len; i++) {
-                                            FURI_LOG_D(TAG, "%d ", hopping_channels_custom_arr[i]);                // 1 2 3 4 1 2
+                                        FURI_LOG_D(
+                                            TAG,
+                                            "Length: %d\n",
+                                            hopping_channels_custom_len); // e.g. 6
+                                        for(int i = 0; i < hopping_channels_custom_len; i++) {
+                                            FURI_LOG_D(
+                                                TAG,
+                                                "%d ",
+                                                hopping_channels_custom_arr[i]); // 1 2 3 4 1 2
                                         }
                                         hopping_channels_len[3] = hopping_channels_custom_len;
                                         hopping_channels = hopping_channels_custom_arr;
@@ -348,7 +382,7 @@ int32_t jammer_app(void* p) {
                                 }
                             }
                             furi_string_free(path);
-                        
+
                             view_port_update(view_port);
                         }
                         break;
@@ -360,34 +394,34 @@ int32_t jammer_app(void* p) {
                                 plugin_state->is_nrf24_connected = false;
                                 notification_message(notification, &sequence_error);
                             } else {
+                                plugin_state->is_nrf24_connected = true;
                                 furi_thread_start(plugin_state->jam_thread);
                             }
                             view_port_update(view_port);
                         }
-                        
+
                         break;
                     case InputKeyBack:
                         FURI_LOG_D(TAG, "terminating thread...");
                         if(!plugin_state->is_thread_running) processing = false;
 
                         plugin_state->close_thread_please = true;
-                        
+
                         if(plugin_state->is_thread_running && plugin_state->jam_thread) {
                             plugin_state->is_thread_running = false;
-                            furi_thread_join(plugin_state->jam_thread); // wait until thread is finished
+                            furi_thread_join(
+                                plugin_state->jam_thread); // wait until thread is finished
                             view_port_update(view_port);
                         }
                         plugin_state->close_thread_please = false;
-                        
+
                         break;
                     default:
                         break;
                     }
-                
-                    //view_port_update(view_port);
 
+                    //view_port_update(view_port);
                 }
-            
             }
         }
 
@@ -397,6 +431,11 @@ int32_t jammer_app(void* p) {
     furi_thread_free(plugin_state->jam_thread);
     FURI_LOG_D(TAG, "nrf24 deinit...");
     nrf24_deinit();
+
+    power_enable_otg(power, false);
+
+    furi_record_close(RECORD_POWER);
+
     view_port_enabled_set(view_port, false);
     gui_remove_view_port(gui, view_port);
     furi_record_close(RECORD_GUI);
