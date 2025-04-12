@@ -21,13 +21,13 @@
 
 #define TAG "jammer"
 
-#define MARGIN_LEFT  5
-#define MARGIN_TOP   5
-#define MARGIN_BOT   5
+#define MARGIN_LEFT 5
+#define MARGIN_TOP 5
+#define MARGIN_BOT 5
 #define MARGIN_RIGHT 5
-#define KEY_WIDTH    5
-#define KEY_HEIGHT   10
-#define KEY_PADDING  2
+#define KEY_WIDTH 5
+#define KEY_HEIGHT 10
+#define KEY_PADDING 2
 
 typedef struct {
     FuriMutex* mutex;
@@ -275,8 +275,7 @@ int32_t jammer_app(void* p) {
     furi_thread_set_callback(plugin_state->jam_thread, mj_worker_thread);
 
     PluginEvent event;
-    for(int i = 0; i < 128; i++)
-        hopping_channels_2[i] = i * 2;
+    for(int i = 0; i < 128; i++) hopping_channels_2[i] = i * 2;
     hopping_channels = hopping_channels_0;
     plugin_state->is_nrf24_connected = true;
     if(!nrf24_check_connected(nrf24_HANDLE)) {
