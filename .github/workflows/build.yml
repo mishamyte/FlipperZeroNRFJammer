@@ -10,23 +10,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
-      # Clone Unleashed firmware repository for the latest version
-      - name: Clone Unleashed Firmware
-        run: |
-          git clone --depth=1 --recursive https://github.com/DarkFlippers/unleashed-firmware.git
-          cd unleashed-firmware
-          # Get the latest release tag
-          git fetch --tags
-          LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)
-          echo "Using Unleashed firmware version: $LATEST_TAG"
-          git checkout $LATEST_TAG
-      
       # Build FAP using the action with Unleashed firmware
       - name: Build FAP with Unleashed Firmware
         uses: flipperdevices/flipperzero-ufbt-action@v0.1.3
+        id: build-app
         with:
-          # Point to the Unleashed firmware as the SDK
-          sdk-directory: ./unleashed-firmware
+          sdk-index-url: https://up.unleashedflip.com/directory.json
+          sdk-channel: dev
       
       # Upload the built FAP files as artifacts
       - name: Upload FAP artifacts
