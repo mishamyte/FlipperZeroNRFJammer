@@ -1,0 +1,37 @@
+name: Build App with Unleashed Firmware
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      # Clone Unleashed firmware repository for the latest version
+      - name: Clone Unleashed Firmware
+        run: |
+          git clone --depth=1 --recursive https://github.com/DarkFlippers/unleashed-firmware.git
+          cd unleashed-firmware
+          # Get the latest release tag
+          git fetch --tags
+          LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)
+          echo "Using Unleashed firmware version: $LATEST_TAG"
+          git checkout $LATEST_TAG
+      
+      # Build FAP using the action with Unleashed firmware
+      - name: Build FAP with Unleashed Firmware
+        uses: flipperdevices/flipperzero-ufbt-action@v0.1.3
+        with:
+          # Point to the Unleashed firmware as the SDK
+          sdk-directory: ./unleashed-firmware
+      
+      # Upload the built FAP files as artifacts
+      - name: Upload FAP artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-${{ steps.build-app.outputs.suffix }}
+          path: ${{ steps.build-app.outputs.fap-artifacts }}
+          if-no-files-found: error
